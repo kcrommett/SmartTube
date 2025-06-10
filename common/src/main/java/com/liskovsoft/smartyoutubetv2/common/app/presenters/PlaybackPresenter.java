@@ -5,6 +5,7 @@ import android.app.Activity;
 import android.content.Context;
 
 import com.liskovsoft.mediaserviceinterfaces.data.MediaItemMetadata;
+import com.liskovsoft.smartyoutubetv2.common.app.models.data.Playlist;
 import com.liskovsoft.smartyoutubetv2.common.app.models.data.Video;
 import com.liskovsoft.smartyoutubetv2.common.app.models.playback.BasePlayerController;
 import com.liskovsoft.smartyoutubetv2.common.app.models.playback.controllers.AutoFrameRateController;
@@ -45,9 +46,10 @@ public class PlaybackPresenter extends BasePresenter<PlaybackView> implements Pl
             return super.add(listener);
         }
     };
-    private Video mPendingVideo;
+    private WeakReference<Video> mVideo;
     // Fix for using destroyed view
     private WeakReference<PlaybackView> mPlayer = new WeakReference<>(null);
+    private boolean mIsEmbedPlayerStarted;
 
     private PlaybackPresenter(Context context) {
         super(context);
@@ -85,29 +87,10 @@ public class PlaybackPresenter extends BasePresenter<PlaybackView> implements Pl
     private void initControllers() {
         // Re-init after app exit
         process(PlayerEventListener::onInit);
-
-        if (mPendingVideo != null) {
-            onNewVideo(mPendingVideo);
-            mPendingVideo = null;
-        }
     }
 
-    public boolean hasPendingVideo() {
-        return mPendingVideo != null;
-    }
-
-    public void openVideo(Video video) {
-        if (video == null) {
-            return;
-        }
-
-        if (getView() == null) {
-            mPendingVideo = video;
-        } else {
-            onNewVideo(video);
-        }
-
-        getViewManager().startView(PlaybackView.class);
+    public void openVideo(String videoId) {
+        openVideo(videoId, false, -1);
     }
 
     /**
@@ -124,30 +107,27 @@ public class PlaybackPresenter extends BasePresenter<PlaybackView> implements Pl
         openVideo(video);
     }
 
-    public void openVideo(String videoId) {
-        openVideo(videoId, false, -1);
-    }
-
-    ///**
-    // * Opens video item from browser, search or channel views<br/>
-    // * Also prepares and start the playback view.
-    // */
-    //public void openVideo(Video item) {
-    //    if (item == null) {
-    //        return;
-    //    }
-    //
-    //    mMainController.openVideo(item);
-    //
-    //    mViewManager.startView(PlaybackView.class);
-    //}
-
-    public Video getVideo() {
-        if (getView() == null) {
-            return null;
+    public void openVideo(Video video) {
+        if (video == null) {
+            return;
         }
 
-        return getView().getVideo();
+        if (getView() != null && getView().isEmbed()) { // switching from the embed player to the fullscreen one
+            // The embed player doesn't disposed properly
+            // NOTE: don't release after init check because this depends on timings
+            getView().finishReally();
+            setView(null);
+            getController(VideoStateController.class).saveState();
+        }
+
+        onNewVideo(video);
+
+        getViewManager().startView(PlaybackView.class);
+        mIsEmbedPlayerStarted = false;
+    }
+
+    public Video getVideo() {
+        return mVideo != null ? mVideo.get() : null;
     }
 
     public boolean isRunningInBackground() {
@@ -215,6 +195,13 @@ public class PlaybackPresenter extends BasePresenter<PlaybackView> implements Pl
     public void setView(PlaybackView view) {
         super.setView(view);
         mPlayer = new WeakReference<>(view);
+
+        // Fix playing the previous video when switching between embed and fullscreen players.
+        // E.g. when the user pressed back on the Channel content screen
+        if (view != null && view.getVideo() != null && mIsEmbedPlayerStarted) {
+            mVideo = new WeakReference<>(view.getVideo());
+            Playlist.instance().add(view.getVideo()); // don't show queue
+        }
     }
 
     public PlaybackView getPlayer() {
@@ -241,6 +228,8 @@ public class PlaybackPresenter extends BasePresenter<PlaybackView> implements Pl
     @Override
     public void onNewVideo(Video video) {
         process(listener -> listener.onNewVideo(video));
+        mVideo = new WeakReference<>(video);
+        mIsEmbedPlayerStarted = true;
     }
 
     @Override

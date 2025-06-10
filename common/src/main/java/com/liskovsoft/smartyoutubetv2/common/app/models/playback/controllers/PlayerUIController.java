@@ -60,6 +60,10 @@ public class PlayerUIController extends BasePlayerController {
     private long mOverlayHideTimeMs;
     private final Runnable mSuggestionsResetHandler = () -> getPlayer().resetSuggestedPosition();
     private final Runnable mUiAutoHideHandler = () -> {
+        if (getPlayer() == null) {
+            return;
+        }
+
         // Playing the video and dialog overlay isn't shown
         if (getPlayer().isPlaying() && !getAppDialogPresenter().isDialogShown()) {
             if (getPlayer().isControlsShown()) { // don't hide when suggestions is shown
@@ -83,11 +87,13 @@ public class PlayerUIController extends BasePlayerController {
     public void onInit() {
         mSuggestionsController = getController(SuggestionsController.class);
 
-        // Could be set once per activity creation (view layout stuff)
-        getPlayer().setResizeMode(getPlayerData().getResizeMode());
-        getPlayer().setZoomPercents(getPlayerData().getZoomPercents());
-        getPlayer().setAspectRatio(getPlayerData().getAspectRatio());
-        getPlayer().setRotationAngle(getPlayerData().getRotationAngle());
+        if (getPlayer() != null) {
+            // Could be set once per activity creation (view layout stuff)
+            getPlayer().setResizeMode(getPlayerData().getResizeMode());
+            getPlayer().setZoomPercents(getPlayerData().getZoomPercents());
+            getPlayer().setAspectRatio(getPlayerData().getAspectRatio());
+            getPlayer().setRotationAngle(getPlayerData().getRotationAngle());
+        }
     }
 
     @Override
@@ -258,12 +264,20 @@ public class PlayerUIController extends BasePlayerController {
 
     @Override
     public void onVideoLoaded(Video item) {
+        if (getPlayer() == null) {
+            return;
+        }
+
         getPlayer().updateEndingTime();
         applySoundOffButtonState();
     }
 
     @Override
     public void onSeekEnd() {
+        if (getPlayer() == null) {
+            return;
+        }
+
         getPlayer().updateEndingTime();
     }
 
@@ -779,11 +793,20 @@ public class PlayerUIController extends BasePlayerController {
     }
 
     private void applyScreenOff(int buttonState) {
+        if (getPlayer() == null) {
+            return;
+        }
+
+        ScreensaverManager manager = getScreensaverManager();
+
+        if (manager == null) {
+            return;
+        }
+
         if (getPlayerTweaksData().getScreenOffTimeoutSec() == 0) {
             boolean isPartialDimming = getPlayerTweaksData().getScreenOffDimmingPercents() < 100;
             getPlayerTweaksData().enableBootScreenOff(buttonState == PlayerUI.BUTTON_OFF && isPartialDimming);
             if (buttonState == PlayerUI.BUTTON_OFF) {
-                ScreensaverManager manager = ((MotherActivity) getActivity()).getScreensaverManager();
                 manager.doScreenOff();
                 manager.setBlocked(isPartialDimming);
                 getPlayer().setButtonState(R.id.action_screen_off, isPartialDimming ? PlayerUI.BUTTON_ON : PlayerUI.BUTTON_OFF);
@@ -801,7 +824,15 @@ public class PlayerUIController extends BasePlayerController {
     }
 
     private void prepareScreenOff() {
-        ScreensaverManager manager = ((MotherActivity) getActivity()).getScreensaverManager();
+        if (getPlayer() == null) {
+            return;
+        }
+
+        ScreensaverManager manager = getScreensaverManager();
+
+        if (manager == null) {
+            return;
+        }
 
         manager.setBlocked(false);
         manager.disable();
@@ -857,7 +888,7 @@ public class PlayerUIController extends BasePlayerController {
     }
 
     private void applySoundOffButtonState() {
-        if (getPlayer().getAudioFormat() != null) {
+        if (getPlayer() != null && getPlayer().getAudioFormat() != null) {
             getPlayer().setButtonState(R.id.action_sound_off,
                     (getPlayer().getAudioFormat().isDefault() || getPlayerData().getPlayerVolume() == 0) ? PlayerUI.BUTTON_ON : PlayerUI.BUTTON_OFF);
         }

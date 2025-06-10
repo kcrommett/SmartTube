@@ -133,7 +133,7 @@ public class PlaybackFragment extends SeekModePlaybackFragment implements Playba
         mExoPlayerController = new ExoPlayerController(getContext(), mPlaybackPresenter);
 
         // Fix open previous video
-        if (mPlaybackPresenter.hasPendingVideo()) {
+        if (mPlaybackPresenter.getVideo() != null) {
             mSelectedVideoId = null;
         }
 
@@ -1145,6 +1145,10 @@ public class PlaybackFragment extends SeekModePlaybackFragment implements Playba
 
     @Override
     public Video getVideo() {
+        if (mExoPlayerController == null) {
+            return null;
+        }
+
         return mExoPlayerController.getVideo();
     }
 
@@ -1587,6 +1591,11 @@ public class PlaybackFragment extends SeekModePlaybackFragment implements Playba
         setChatReceiver(null);
         setSeekBarSegments(null);
         setSeekPreviewTitle(null);
+    }
+
+    @Override
+    public boolean isEmbed() {
+        return false;
     }
 
     /**

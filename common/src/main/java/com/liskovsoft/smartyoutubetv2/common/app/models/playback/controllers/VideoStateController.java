@@ -30,7 +30,6 @@ public class VideoStateController extends BasePlayerController {
     private static final long EMBED_THRESHOLD_MS = 30_000;
     private static final int HISTORY_UPDATE_INTERVAL_MINUTES = 5; // Sync history every five minutes
     private boolean mIsPlayEnabled;
-    private Video mVideo = new Video();
     private boolean mIsPlayBlocked;
     private int mTickleLeft;
     private boolean mIncognito;
@@ -44,17 +43,13 @@ public class VideoStateController extends BasePlayerController {
     @Override
     public void onNewVideo(Video item) {
         // Ensure that we aren't running on presenter init stage
-        if (getPlayer() != null) {
+        if (getPlayer() != null && getPlayer().containsMedia()) {
             if (!item.equals(getVideo())) { // a video might be opened twice (when remote connection enabled). Fix for that.
                 // Reset auto-save history timer
                 mTickleLeft = 0;
                 // Save state of the previous video.
                 // In case video opened from phone and other stuff.
                 removeFromHistoryIfNeeded();
-                saveState();
-            } else if (isEmbed()) { // switching from embed to normal player
-                // Save state of the previous video.
-                // In case video opened from phone and other stuff.
                 saveState();
             }
         }
@@ -155,8 +150,9 @@ public class VideoStateController extends BasePlayerController {
 
     @Override
     public void onMetadata(MediaItemMetadata metadata) {
-        saveState(); // start watching?
-        persistState(); // restore on crash???
+        // NOTE: needed for the restore after oom crash?
+        //saveState(); // start watching?
+        //persistState(); // restore on crash???
 
         // Channel info should be loaded at this point
         restoreSubtitleFormat();
@@ -167,6 +163,10 @@ public class VideoStateController extends BasePlayerController {
 
     @Override
     public void onEngineError(int type, int rendererIndex, Throwable error) {
+        if (getPlayer() == null) {
+            return;
+        }
+
         // Oops. Error happens while playing (network lost etc).
         if (getPlayer().getPositionMs() > 1_000) {
             saveState();
@@ -176,7 +176,7 @@ public class VideoStateController extends BasePlayerController {
     @Override
     public void onVideoLoaded(Video item) {
         // Actual video that match currently loaded one.
-        mVideo = item;
+        //mVideo = item;
 
         // Restore formats again.
         // Maybe this could help with Shield format problem.
@@ -322,12 +322,19 @@ public class VideoStateController extends BasePlayerController {
         State state = getStateService().getByVideoId(item.videoId);
 
         // Reset position of music videos
-        boolean isShort = state != null && state.durationMs < MUSIC_VIDEO_MAX_DURATION_MS && !getPlayerTweaksData().isRememberPositionOfShortVideosEnabled();
+        boolean isShort = state != null && state.durationMs < MUSIC_VIDEO_MAX_DURATION_MS
+                && !getPlayerTweaksData().isRememberPositionOfShortVideosEnabled();
         boolean isVideoEnded = state != null && state.durationMs - state.positionMs < 3_000;
         boolean isLive = item.isLive;
 
         if (getPlayerTweaksData().isRememberPositionOfLiveVideosEnabled() && item.isFullLive()) {
             isLive = false;
+        }
+
+        // Don't reset if doing switch from the embed to the fullscreen one
+        boolean sameVideo = item.equals(getVideo());
+        if (sameVideo) {
+            isShort = false;
         }
 
         if (isShort || isVideoEnded || isLive) {
@@ -395,16 +402,23 @@ public class VideoStateController extends BasePlayerController {
 
     public void saveState() {
         // Skip mini player, but don't save for the previews (mute enabled)
-        if (isMutedEmbed() || isBeginEmbed()) {
+        if (isMutedEmbed()) {
             return;
         }
 
         savePosition();
-        updateHistory();
-        syncWithPlaylists();
+
+        if (!isBeginEmbed()) {
+            updateHistory();
+            syncWithPlaylists();
+        }
     }
 
     private void restoreState() {
+        if (getPlayer() == null) {
+            return;
+        }
+
         restorePosition();
         restorePendingPosition();
         // Player thinks that subs not enabled if I enable it too early (e.g. on source change event).
@@ -438,7 +452,8 @@ public class VideoStateController extends BasePlayerController {
         long positionMs = getPlayer().getPositionMs();
         long remainsMs = durationMs - positionMs;
         boolean isPositionActual = remainsMs > 1_000;
-        if (isPositionActual) { // partially viewed
+        boolean isLiveBroken = video.isLive && durationMs <= 30_000; // the live without a history
+        if (isPositionActual && !isLiveBroken) { // partially viewed
             State state = new State(video, positionMs, durationMs, getPlayer().getSpeed());
             getStateService().save(state);
             // Sync video. You could safely use it later to restore state.
@@ -467,14 +482,14 @@ public class VideoStateController extends BasePlayerController {
         }
 
         // Set actual position for live videos with uncommon length
-        if ((state == null || state.durationMs - state.positionMs < Math.max(RESTORE_LIVE_BUFFER_MS, getLiveThreshold())) && item.isLive) {
+        if (item.isLive && (state == null || state.durationMs - state.positionMs < Math.max(RESTORE_LIVE_BUFFER_MS, getLiveThreshold()))) {
             // Add buffer. Should I take into account segment offset???
             state = new State(item, getPlayer().getDurationMs() - getLiveBuffer());
         }
 
         // Do I need to check that item isn't live? (state != null && !item.isLive)
         if (state != null) {
-            setPositionMs(state.positionMs);
+            getPlayer().setPositionMs(state.positionMs);
         }
 
         if (!mIsPlayBlocked) {
@@ -510,6 +525,10 @@ public class VideoStateController extends BasePlayerController {
     }
 
     private void restoreSpeedAndPositionIfNeeded() {
+        if (getPlayer() == null) {
+            return;
+        }
+
         Video item = getVideo();
 
         boolean liveEnd = isLiveEnd();
@@ -576,22 +595,17 @@ public class VideoStateController extends BasePlayerController {
     }
 
     private void showHideScreensaver(boolean show) {
-        if (getActivity() instanceof MotherActivity) {
-            ScreensaverManager screensaverManager = ((MotherActivity) getActivity()).getScreensaverManager();
+        ScreensaverManager screensaverManager = getScreensaverManager();
 
-            if (show) {
-                screensaverManager.enableChecked();
-            } else {
-                screensaverManager.disableChecked();
-            }
+        if (screensaverManager == null) {
+            return;
         }
-    }
 
-    /**
-     * Actual video that match currently loaded one.
-     */
-    private Video getVideo() {
-        return mVideo;
+        if (show) {
+            screensaverManager.enableChecked();
+        } else {
+            screensaverManager.disableChecked();
+        }
     }
 
     private boolean isMusicVideo() {
@@ -599,12 +613,12 @@ public class VideoStateController extends BasePlayerController {
         return item.belongsToMusic();
     }
 
-    private void setPositionMs(long positionMs) {
-        boolean samePositions = Math.abs(positionMs - getPlayer().getPositionMs()) < BEGIN_THRESHOLD_MS;
-        if (!samePositions) {
-            getPlayer().setPositionMs(positionMs);
-        }
-    }
+    //private void setPositionMs(long positionMs) {
+    //    boolean samePositions = Math.abs(positionMs - getPlayer().getPositionMs()) < BEGIN_THRESHOLD_MS;
+    //    if (!samePositions) {
+    //        getPlayer().setPositionMs(positionMs);
+    //    }
+    //}
 
     private boolean isStateOutdated(State state, Video item) {
         if (state == null) {
@@ -665,14 +679,11 @@ public class VideoStateController extends BasePlayerController {
     }
 
     private boolean isMutedEmbed() {
-        return isEmbed() && getPlayer() != null && Helpers.floatEquals(getPlayer().getVolume(), 0);
+        return isEmbedPlayer() && getPlayer() != null && Helpers.floatEquals(getPlayer().getVolume(), 0);
     }
 
     private boolean isBeginEmbed() {
-        return isEmbed() && System.currentTimeMillis() - mNewVideoTimeMs <= EMBED_THRESHOLD_MS;
-    }
-
-    private boolean isEmbed() {
-        return getVideo() != null && getVideo().embedPlayer;
+        return isEmbedPlayer() && System.currentTimeMillis() - mNewVideoTimeMs <= EMBED_THRESHOLD_MS &&
+                getPlayer() != null && getPlayer().getPositionMs() < getPlayer().getDurationMs();
     }
 }

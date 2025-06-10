@@ -22,6 +22,7 @@ import com.liskovsoft.smartyoutubetv2.tv.util.ViewUtil;
 import java.lang.ref.WeakReference;
 
 public class ComplexImageView extends RelativeLayout {
+    private static final long PLAYER_START_DELAY_MS = 2_000;
     private ImageView mMainImage;
     private ImageView mPreviewImage;
     private EmbedPlayerView mPreviewPlayer;
@@ -79,6 +80,13 @@ public class ComplexImageView extends RelativeLayout {
         if (!hasWindowFocus) {
             stopPlayback();
         }
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        super.onDetachedFromWindow();
+
+        stopPlayback();
     }
 
     /**
@@ -152,7 +160,7 @@ public class ComplexImageView extends RelativeLayout {
                 mCreateAndStartPlayer = this::createAndStartPlayer;
             }
 
-            Utils.postDelayed(mCreateAndStartPlayer, 2_000);
+            Utils.postDelayed(mCreateAndStartPlayer, PLAYER_START_DELAY_MS);
         }
     }
 
@@ -175,6 +183,10 @@ public class ComplexImageView extends RelativeLayout {
     }
 
     public void stopPlayback() {
+        stopPlayback(false);
+    }
+
+    public void stopPlayback(boolean stopImmediately) {
         if (getVideo() == null) {
             return;
         }
@@ -191,9 +203,18 @@ public class ComplexImageView extends RelativeLayout {
             Utils.removeCallbacks(mCreateAndStartPlayer);
 
             if (mPreviewPlayer != null) {
-                mPreviewContainer.removeView(mPreviewPlayer);
                 mPreviewContainer.setVisibility(View.GONE);
-                mPreviewPlayer.finish();
+                if (stopImmediately) {
+                    mPreviewPlayer.finish();
+                    mPreviewContainer.removeView(mPreviewPlayer);
+                } else {
+                    EmbedPlayerView epv = mPreviewPlayer;
+                    epv.setMute(true);
+                    Utils.postDelayed(() -> {
+                        epv.finish();
+                        mPreviewContainer.removeView(epv);
+                    }, 500);
+                }
                 mPreviewPlayer = null;
             }
         }

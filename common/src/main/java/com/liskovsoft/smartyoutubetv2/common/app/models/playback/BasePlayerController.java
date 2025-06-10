@@ -12,15 +12,17 @@ import com.liskovsoft.mediaserviceinterfaces.NotificationsService;
 import com.liskovsoft.mediaserviceinterfaces.SignInService;
 import com.liskovsoft.mediaserviceinterfaces.data.MediaItemMetadata;
 import com.liskovsoft.smartyoutubetv2.common.app.models.data.Video;
-import com.liskovsoft.smartyoutubetv2.common.app.models.playback.manager.PlayerManager;
 import com.liskovsoft.smartyoutubetv2.common.app.models.playback.listener.PlayerEventListener;
 import com.liskovsoft.smartyoutubetv2.common.app.models.playback.service.VideoStateService;
 import com.liskovsoft.smartyoutubetv2.common.app.presenters.AppDialogPresenter;
 import com.liskovsoft.smartyoutubetv2.common.app.presenters.PlaybackPresenter;
 import com.liskovsoft.smartyoutubetv2.common.app.presenters.SearchPresenter;
+import com.liskovsoft.smartyoutubetv2.common.app.views.PlaybackView;
 import com.liskovsoft.smartyoutubetv2.common.app.views.ViewManager;
 import com.liskovsoft.smartyoutubetv2.common.exoplayer.selector.FormatItem;
 import com.liskovsoft.smartyoutubetv2.common.misc.MediaServiceManager;
+import com.liskovsoft.smartyoutubetv2.common.misc.MotherActivity;
+import com.liskovsoft.smartyoutubetv2.common.misc.ScreensaverManager;
 import com.liskovsoft.smartyoutubetv2.common.prefs.ContentBlockData;
 import com.liskovsoft.smartyoutubetv2.common.prefs.GeneralData;
 import com.liskovsoft.smartyoutubetv2.common.prefs.PlayerData;
@@ -47,8 +49,13 @@ public abstract class BasePlayerController implements PlayerEventListener {
     }
 
     @Nullable
-    public PlayerManager getPlayer() {
+    public PlaybackView getPlayer() {
         return mMainController != null ? mMainController.getPlayer() : null;
+    }
+
+    @Nullable
+    public Video getVideo() {
+        return mMainController != null ? mMainController.getVideo() : null;
     }
 
     protected void setAltContext(Context context) {
@@ -386,5 +393,18 @@ public abstract class BasePlayerController implements PlayerEventListener {
 
     protected PlaybackPresenter getPlaybackPresenter() {
         return PlaybackPresenter.instance(getContext());
+    }
+
+    protected boolean isEmbedPlayer() {
+        return getPlayer() != null && getPlayer().isEmbed();
+    }
+
+    protected ScreensaverManager getScreensaverManager() {
+        Activity activity = getActivity();
+        if (activity instanceof MotherActivity) {
+            return ((MotherActivity) activity).getScreensaverManager();
+        }
+
+        return null;
     }
 }

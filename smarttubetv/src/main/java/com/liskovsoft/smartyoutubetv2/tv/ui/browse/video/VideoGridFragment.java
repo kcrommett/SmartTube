@@ -8,6 +8,8 @@ import androidx.leanback.widget.Presenter;
 import androidx.leanback.widget.Row;
 import androidx.leanback.widget.RowPresenter;
 import androidx.leanback.widget.VerticalGridPresenter;
+
+import com.liskovsoft.sharedutils.helpers.Helpers;
 import com.liskovsoft.smartyoutubetv2.common.app.models.data.Video;
 import com.liskovsoft.smartyoutubetv2.common.app.models.data.VideoGroup;
 import com.liskovsoft.smartyoutubetv2.common.app.presenters.BrowsePresenter;
@@ -15,7 +17,6 @@ import com.liskovsoft.smartyoutubetv2.common.app.presenters.interfaces.VideoGrou
 import com.liskovsoft.smartyoutubetv2.common.misc.TickleManager;
 import com.liskovsoft.smartyoutubetv2.common.prefs.MainUIData;
 import com.liskovsoft.smartyoutubetv2.common.utils.LoadingManager;
-import com.liskovsoft.smartyoutubetv2.common.utils.Utils;
 import com.liskovsoft.smartyoutubetv2.tv.R;
 import com.liskovsoft.smartyoutubetv2.tv.adapter.VideoGroupObjectAdapter;
 import com.liskovsoft.smartyoutubetv2.tv.presenter.CustomVerticalGridPresenter;
@@ -43,7 +44,6 @@ public class VideoGridFragment extends GridFragment implements VideoSection {
     private Video mSelectedItem;
     private float mVideoGridScale;
     private final Runnable mRestoreTask = this::restorePosition;
-    private Runnable mUpdateGrid;
 
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
@@ -138,18 +138,29 @@ public class VideoGridFragment extends GridFragment implements VideoSection {
 
     @Override
     public void update(VideoGroup group) {
-        if (mGridAdapter == null) {
-            mPendingUpdates.add(group);
+        int action = group.getAction();
+
+        // Attempt to fix: IllegalStateException: Cannot call this method while RecyclerView is computing a layout or scrolling
+        if ((action == VideoGroup.ACTION_SYNC || action == VideoGroup.ACTION_REPLACE) && getBrowseGrid() != null && getBrowseGrid().isComputingLayout()) {
             return;
         }
 
-        Utils.removeCallbacks(mUpdateGrid);
-        mUpdateGrid = null;
+        // Smooth remove animation
+        if (action == VideoGroup.ACTION_REMOVE || action == VideoGroup.ACTION_REMOVE_AUTHOR) {
+            updateInt(group);
+            return;
+        }
 
-        // Attempt to fix: IllegalStateException: Cannot call this method while RecyclerView is computing a layout or scrolling
-        if (getBrowseGrid() != null && getBrowseGrid().isComputingLayout()) {
-            mUpdateGrid = () -> update(group);
-            Utils.postDelayed(mUpdateGrid, 100);
+        freeze(true);
+
+        updateInt(group);
+
+        freeze(false);
+    }
+
+    private void updateInt(VideoGroup group) {
+        if (mGridAdapter == null) {
+            mPendingUpdates.add(group);
             return;
         }
 
@@ -172,11 +183,7 @@ public class VideoGridFragment extends GridFragment implements VideoSection {
             return;
         }
 
-        freeze(true);
-
         mGridAdapter.add(group);
-
-        freeze(false);
 
         restorePosition();
     }
